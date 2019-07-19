@@ -1,0 +1,14 @@
+TODO:
+
+Check grammar with gramr when done
+Check variable names match new variable names
+ - points_possible
+ - points_earned
+ - etc.
+
+
+Changes to download structure:
+- Remove README
+- Rename examples.Rmd to README.Rmd
+- Include rendered README in download
+- Rename page-view.csv to page_views.csv
