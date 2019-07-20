@@ -3,27 +3,88 @@ title: "Examples for handling class data"
 output: html_notebook
 ---
 
-# Required Packages and Helper Functions
+## Required Packages and Helper Functions
 
-To use the code in these examples you will need a handful of useful packages. Here is the code to install them:
+To use the code in these examples you will need a handful of useful packages. Here are some very brief descriptions of why each package is needed:
 
-```{r setup, echo = FALSE}
+Package | Description
+------- | -------------------------------------------------
+**dplyr** | Exposes the pipe (`%>%`) and has a bunch of functions that simplify table manipulation
+**readr** | Simplifies and standardises file reading functions
+**stringr** | Simplifies and standardises string manipulation functions
+**purrr** | Makes working with loops much easier
+**lubridate** | Makes working with dates easier
+**jsonlite** | Parses JSON string objects into lists
+**pacman** | Simplifies requiring, installing, and loading packages
 
+
+Here is the code to install and load them, along with some helper functions that will be useful later:
+
+```{r setup}
 # load required packages, installing if needed
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(jsonlite, dplyr, readr, purrr, lubridate)
+if (!require("pacman", quietly = TRUE)) install.packages("pacman")
+pacman::p_load(jsonlite, dplyr, readr, purrr, stringr, lubridate)
 
 # define some helper functions that will be useful later
 json_to_list <- function(x) {
   if (is.null(x) | is.na(x)) list() else parse_json(x)
 }
+
+# read in dates as UTC timezone and then convert to system timezone
+convert_date_string <- function(x) {
+  ymd_hms(x, tz = "UTC") %>% with_tz(Sys.timezone())
+}
 ```
 
-# Loading Class Data
+## Loading Class Data
 
 Data from the class is split into four tables with each table in its own file. Below is the code to load each table, and a description of the contents of each table.
 
-## Response Data
+### Response Data
+
+#### Description
+
+The response data is organized into a table with a variable number of columns (depending on `lrn_option_<n>`, see column description below) and a number of rows equivalent to the number of responses made to questions in the course. This table will likely be very large (200 students will yield around 300,000 responses), so in the next section (*Working With Class Data**) we will break things in to useable parts. Here is a description of each variable in the responses table:
+
+Column | Description
+------ | --------------------------------------------------
+**class_id** | a unique identifier for this particular class
+**course_name** | the GitHub repository for the course
+**release** | the GitHub branch that the course was generated from
+**student_id** | a unique identifier for each student on CourseKata
+**item_id** | a unique identifier for this particular question
+**item_type** | whether this is a *learnosity* or *datacamp* item
+**chapter** | the chapter that the item appears in
+**page** | the page that the item appears on
+**prompt** | the question prompt for this response
+**response** | the value of the response: either the value (for shorttext, plaintext, ratings, datacamp, etc.) or an array of numbers indicating the position of the multiple choice answers chosen and which correspond to the columns `lrn_option_<number>`.
+**points_possible** | the number of points possible if the completely correct answer is given
+**points_earned** | the number of points earned
+**dt_submitted** | a datetime object indicating when the response was submitted (timezone: GMT/UTC)
+**attempt** | the number of times the question has been attempted, including the current attempt
+**user_agent** | the browser user agent string for the user (see for details: )
+**dcl_pre_exercise_code** | the code run invisibly to set up the module
+**dcl_sample_code** | the code in the module when it first loads
+**dcl_solution** | the code that appears in the solution tab
+**dcl_sct** | the solution checking code (see the testwhat package for details)
+**dcl_hint** | the text that appears in the hint box
+**lrn_session_id** | the unique ID for this user session on Learnosity
+**lrn_response_id** | the unique ID for this particular response on Learnosity
+**lrn_items_api_version** | the version of the Learnosity Items API for this item
+**lrn_response_api_version** | the version of the Learnosity Response API for this response
+**lrn_activity_id** | the unique ID for the activity on Learnosity
+**lrn_question_reference** | the unique ID for the question on Learnosity
+**lrn_question_position** | for multi-question items, the position of the question in the item
+**lrn_type** | the Learnosity type of the question (e.g. mcq, shorttext, plaintext, rating, etc.)
+**lrn_dt_started** | a datetime object indicating when the responses was started (timezone: GMT/UTC)
+**lrn_dt_saved** | a datetime object indicating when the responses was saved (timezone: GMT/UTC)
+**lrn_status** | the status of the question response on Learnosity (e.g. "Completed")
+**lrn_option_<n>** | for multiple choice questions (`lrn_type`: "mcq"), the value of the option at position *n*
+**lrn_response_json** | the fully-detailed JSON response object
+ 
+*For more about the distinction between Learnosity Activities, Items, and Questions, see the documenation at https://authorguide.learnosity.com/hc/en-us.*
+ 
+#### Code to Load
 
 ```{r}
 # for responses, the number of columns is variable so we don't know the types
@@ -33,58 +94,64 @@ responses <- "responses.csv" %>%
   read_csv(col_types = cols(.default = col_character())) %>% 
   mutate_at(vars(correct), parse_logical) %>% 
   mutate_at(vars(attempt, lrn_question_position), parse_integer) %>% 
-  mutate_at(vars(matches("^(?:lrn_)?dt_")), parse_datetime) %>% 
+  # read in dates as UTC timezone and then convert to system timezone
+  mutate_at(vars(matches("^(?:lrn_)?dt_")), convert_date_string) %>% 
   mutate_at(vars(lrn_score, lrn_max_score), parse_number) %>% 
   # convert response JSON to a nested list-column then move it to the end
   mutate(lrn_response_json = map(lrn_response_json, json_to_list)) %>% 
   select(-lrn_response_json, lrn_response_json)
-
-glimpse(responses)
 ```
 
-## Page Views
+### Page Views
+
+#### Description
 
 The page view data comes in a table of student-page-datetime cases. That is, there is a row for every time a student accessed a page in the course. The table has five variables:
- - *class_id*: a unique identifier for this particular class
- - *student_id*: a unique identifier for each student on CourseKata
- - *chapter*: the chapter the page view occurred in
- - *page*: the page that was viewed
- - *dt_accessed*: a datetime object indicating when the page was accessed (timezone: GMT/UTC)
+
+Column | Description
+------ | --------------------------------------------------
+**class_id** | a unique identifier for this particular class
+**student_id** | a unique identifier for each student on CourseKata
+**chapter** | the chapter the page view occurred in
+**page** | the page that was viewed
+**dt_accessed** | a datetime object indicating when the page was accessed (timezone: GMT/UTC)
+ 
+#### Code to Load
 
 ```{r read-in page views}
 page_views <- "page-views.csv" %>% 
   read_csv(col_types = cols(.default = col_character())) %>% 
-  mutate(
-    # read in as UTC and then convert to system timezone
-    dt_accessed = ymd_hms(dt_accessed, tz = "UTC"),
-    dt_accessed = with_tz(dt_accessed, Sys.timezone())
-  )
-
-glimpse(page_views)
+  # read in dates as UTC timezone and then convert to system timezone
+  mutate(dt_accessed = convert_date_string(dt_accessed))
 ```
 
-## Items
+### Items
 
 Items are organized in a table where each row represents all of the data for a particular question in the class. There are 18 columns in the table, though they will never *all* be relevant for a particular item. Columns prefixed with "dcl_" are only filled for DataCamp-Light items (the R-sandboxes) and columns prefixed with "lrn_" are only filled for Learnosity items. Here are descriptions of the columns in the table:
- - *class_id*: a unique identifier for this particular class
- - *item_id*: a unique identifier for this particular question
- - *item_type*: whether this is a *learnosity* or *datacamp* item
- - *chapter*: the chapter that the item appears in
- - *page*: the page that the item appears on
- - *dcl_pre_exercise_code*: the code run invisibly to set up the module
- - *dcl_sample_code*: the code in the module when it first loads
- - *dcl_solution*: the code that appears in the solution tab
- - *dcl_sct*: the solution checking code (see the testwhat package for details)
- - *dcl_hint*: the text that appears in the hint box
- - *lrn_activity_reference*: the unique ID for the activity on Learnosity
- - *lrn_question_reference*: the unique ID for the question on Learnosity
- - *lrn_question_position*: for multi-question items, the position of the question in the item
- - *lrn_template_name*: the template used to create the item
- - *lrn_template_reference*: a unique ID for the item template on Learnosity
- - *lrn_item_status*: the status of the item on Learnosity (e.g. "published")
- - *lrn_question_data*: the fully-detailed JSON object that sets up the item
+
+Column | Description
+------ | --------------------------------------------------
+**class_id** | a unique identifier for this particular class
+**item_id** | a unique identifier for this particular question
+**item_type** | whether this is a **learnosity** or **datacamp** item
+**chapter** | the chapter that the item appears in
+**page** | the page that the item appears on
+**dcl_pre_exercise_code** | the code run invisibly to set up the module
+**dcl_sample_code** | the code in the module when it first loads
+**dcl_solution** | the code that appears in the solution tab
+**dcl_sct** | the solution checking code (see the testwhat package for details)
+**dcl_hint** | the text that appears in the hint box
+**lrn_activity_reference** | the unique ID for the activity on Learnosity
+**lrn_question_reference** | the unique ID for the question on Learnosity
+**lrn_question_position** | for multi-question items, the position of the question in the item
+**lrn_template_name** | the template used to create the item
+**lrn_template_reference** | a unique ID for the item template on Learnosity
+**lrn_item_status** | the status of the item on Learnosity (e.g. "published")
+**lrn_question_data** | the fully-detailed JSON object that sets up the item
  
-For more about the distinction between Learnosity Activities, Items, and Questions, see the documenation at https://authorguide.learnosity.com/hc/en-us.
+*For more about the distinction between Learnosity Activities, Items, and Questions, see the documenation at https://authorguide.learnosity.com/hc/en-us.*
+
+#### Code to Load
 
 ```{r}
 items <- "items.csv" %>% 
@@ -93,31 +160,36 @@ items <- "items.csv" %>%
     lrn_question_position = parse_integer(lrn_question_position),
     lrn_question_data = map(lrn_question_data, json_to_list)
   )
-
-glimpse(items)
 ```
 
-## Tags 
+### Tags 
+
+#### Description
 
 Tags are not currently utilized heavily within CourseKata but may have a larger role in the future (e.g. tagging specific learning outcomes). For completeness, the table is described here, but it will likely not be of much use. 
 
 The tags table is organized at the item-tag level where each tag for each item has its own row. There are three columns in the table:
- - *item_id*: a unique identifier for this particular question
- - *tag*: the tag given to this item
- - *tag_type*: the hierarchical parent tag for this tag (e.g. "Chapter" holds all of the chapter name tags)
+
+Column | Description
+------ | --------------------------------------------------
+**item_id** | a unique identifier for this particular question
+**tag** | the tag given to this item
+**tag_type** | the hierarchical parent tag for this tag (e.g. "Chapter" holds all of the chapter name tags)
+ 
+#### Code to Load
 
 ```{r}
 tags <- "tags.csv" %>% 
   read_csv(col_types = cols(.default = col_character()))
-
-glimpse(tags)
 ```
 
-# Working With Class Data
+## Working With Class Data
 
-## Split the Response Data
+### Split the Response Data
 
 Though all of the responses have been read into the `responses` table, there are a lot of different types of responses lumped into the one file. One thing that might helps is to make some semantic splits into the survey items, in-text items, and practice quizzes. Since the survey items are (generally) static trait questions like demographics, those can go into a `students` table, and the others into `textbook_items` and `practice_quizzes`.
+
+Additionally, you might have noticed that the responses with a `lrn_type` of "mcq" all have response values that look like `["0"]` or `["1", "3"]`. These values correspond to the `lrn_option_<n>` columns, where `["0"]` would correspond to the value of `lrn_option_0` and `["1", "3"]` would correspond to both the value in `lrn_option_1` and `lrn_option_3`. Before we split up the table into parts, we will map out those values so that `response` is filled with the actual value from that response option.
 
 ```{r}
 
