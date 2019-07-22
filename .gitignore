@@ -37,3 +37,8 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+
+# Class data files
+**/*.Rds
+**/*.csv
+real_data/
