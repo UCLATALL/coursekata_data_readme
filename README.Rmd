@@ -1,18 +1,22 @@
 ---
-title: "Examples for handling class data"
-output: html_notebook
+title: "CourseKata Class Data"
+output: pdf_document
 ---
+
+If you are reading this as a PDF, this PDF was created from the RMarkdown notebook README.Rmd. If you open that file in RStudio you will be able to run and interact with the code blocks below. Otherwise, happy reading!
 
 ## Required Packages and Helper Functions
 
 To use the code in these examples you will need a handful of useful packages. Here are some very brief descriptions of why each package is needed:
 
 Package | Description
-------- | -------------------------------------------------
+------ | -------------
 **dplyr** | Exposes the pipe (`%>%`) and has a bunch of functions that simplify table manipulation
+**tidyr** | Has functions for tidying data
 **readr** | Simplifies and standardises file reading functions
 **stringr** | Simplifies and standardises string manipulation functions
 **purrr** | Makes working with loops much easier
+**future** & **furrr** | Functions for making purrr functions run parallelized
 **lubridate** | Makes working with dates easier
 **jsonlite** | Parses JSON string objects into lists
 **pacman** | Simplifies requiring, installing, and loading packages
@@ -23,7 +27,11 @@ Here is the code to install and load them, along with some helper functions that
 ```{r setup}
 # load required packages, installing if needed
 if (!require("pacman", quietly = TRUE)) install.packages("pacman")
-pacman::p_load(jsonlite, dplyr, readr, purrr, stringr, lubridate)
+pacman::p_load(jsonlite, dplyr, tidyverse, readr, purrr, stringr, lubridate,
+               future, furrr)
+
+# setup the future/furrr package
+future::plan("future::multiprocess")
 
 # define some helper functions that will be useful later
 json_to_list <- function(x) {
@@ -47,7 +55,7 @@ Data from the class is split into four tables with each table in its own file. B
 The response data is organized into a table with a variable number of columns (depending on `lrn_option_<n>`, see column description below) and a number of rows equivalent to the number of responses made to questions in the course. This table will likely be very large (200 students will yield around 300,000 responses), so in the next section (*Working With Class Data**) we will break things in to useable parts. Here is a description of each variable in the responses table:
 
 Column | Description
------- | --------------------------------------------------
+------ | -------------
 **class_id** | a unique identifier for this particular class
 **course_name** | the GitHub repository for the course
 **release** | the GitHub branch that the course was generated from
@@ -90,16 +98,17 @@ Column | Description
 # for responses, the number of columns is variable so we don't know the types
 # readr will try to guess the types, but col_guess() is unreliable
 # instead just read everything in as a character column and then convert after
-responses <- "responses.csv" %>% 
-  read_csv(col_types = cols(.default = col_character())) %>% 
-  mutate_at(vars(correct), parse_logical) %>% 
-  mutate_at(vars(attempt, lrn_question_position), parse_integer) %>% 
+responses <- "responses.csv" %>%
+  read_csv(col_types = cols(.default = col_character())) %>%
+  mutate_at(vars(correct), parse_logical) %>%
+  mutate_at(vars(attempt, lrn_question_position), parse_integer) %>%
   # read in dates as UTC timezone and then convert to system timezone
-  mutate_at(vars(matches("^(?:lrn_)?dt_")), convert_date_string) %>% 
-  mutate_at(vars(lrn_score, lrn_max_score), parse_number) %>% 
+  mutate_at(vars(matches("^(?:lrn_)?dt_")), convert_date_string) %>%
+  mutate_at(vars(lrn_score, lrn_max_score), parse_number) %>%
   # convert response JSON to a nested list-column then move it to the end
-  mutate(lrn_response_json = map(lrn_response_json, json_to_list)) %>% 
-  select(-lrn_response_json, lrn_response_json)
+  mutate(lrn_response_json = map(lrn_response_json, json_to_list)) %>%
+  select(-lrn_response_json, lrn_response_json) %>%
+  drop_na(student_id, prompt, response)
 ```
 
 ### Page Views
@@ -109,7 +118,7 @@ responses <- "responses.csv" %>%
 The page view data comes in a table of student-page-datetime cases. That is, there is a row for every time a student accessed a page in the course. The table has five variables:
 
 Column | Description
------- | --------------------------------------------------
+------ | -------------
 **class_id** | a unique identifier for this particular class
 **student_id** | a unique identifier for each student on CourseKata
 **chapter** | the chapter the page view occurred in
@@ -130,7 +139,7 @@ page_views <- "page-views.csv" %>%
 Items are organized in a table where each row represents all of the data for a particular question in the class. There are 18 columns in the table, though they will never *all* be relevant for a particular item. Columns prefixed with "dcl_" are only filled for DataCamp-Light items (the R-sandboxes) and columns prefixed with "lrn_" are only filled for Learnosity items. Here are descriptions of the columns in the table:
 
 Column | Description
------- | --------------------------------------------------
+------ | -------------
 **class_id** | a unique identifier for this particular class
 **item_id** | a unique identifier for this particular question
 **item_type** | whether this is a **learnosity** or **datacamp** item
@@ -171,7 +180,7 @@ Tags are not currently utilized heavily within CourseKata but may have a larger 
 The tags table is organized at the item-tag level where each tag for each item has its own row. There are three columns in the table:
 
 Column | Description
------- | --------------------------------------------------
+------ | -------------
 **item_id** | a unique identifier for this particular question
 **tag** | the tag given to this item
 **tag_type** | the hierarchical parent tag for this tag (e.g. "Chapter" holds all of the chapter name tags)
@@ -185,12 +194,91 @@ tags <- "tags.csv" %>%
 
 ## Working With Class Data
 
-### Split the Response Data
+### Filling Out Multiple Choice Data
 
-Though all of the responses have been read into the `responses` table, there are a lot of different types of responses lumped into the one file. One thing that might helps is to make some semantic splits into the survey items, in-text items, and practice quizzes. Since the survey items are (generally) static trait questions like demographics, those can go into a `students` table, and the others into `textbook_items` and `practice_quizzes`.
-
-Additionally, you might have noticed that the responses with a `lrn_type` of "mcq" all have response values that look like `["0"]` or `["1", "3"]`. These values correspond to the `lrn_option_<n>` columns, where `["0"]` would correspond to the value of `lrn_option_0` and `["1", "3"]` would correspond to both the value in `lrn_option_1` and `lrn_option_3`. Before we split up the table into parts, we will map out those values so that `response` is filled with the actual value from that response option.
+You might have noticed that the responses with a `lrn_type` of "mcq" all have response values that look like `["0"]` or `["1", "3"]`. These values correspond to the `lrn_option_<n>` columns, where `["0"]` would correspond to the value of `lrn_option_0` and `["1", "3"]` would correspond to both the value in `lrn_option_1` and `lrn_option_3`. Before we split up the table into parts, we will map out those values so that `response` is filled with the actual value from that response option.
 
 ```{r}
+# NOTE: this code chunk can take a couple minutes to run
 
+lookup_table <- responses %>%
+  filter(lrn_type == "mcq") %>%
+  select(reference = lrn_question_reference, starts_with("lrn_option_")) %>%
+  distinct()
+
+lookup_response <- function(response, reference, lookup_table) {
+  if (response == "[]" | is.na(response)) return(NA)
+  if (!str_detect(response, '\\[(?:"\\d+",? ?)\\]')) return(response)
+  if (!reference %in% lookup_table$reference) return(response)
+
+  option_nums <- response %>%
+    str_split(",", simplify = TRUE) %>%
+    parse_number() %>%
+    as.integer()
+
+  lookup_table[lookup_table$reference == reference, option_nums + 2] %>%
+    as.character() %>%
+    paste0(collapse = "; ")
+}
+
+responses <- responses %>%
+  mutate(response = future_map2_chr(
+    response, lrn_question_reference,
+    lookup_response, lookup_table = lookup_table
+  ))
+
+# clean-up
+rm(lookup_table, lookup_response)
 ```
+
+### Split the Response Data
+
+Though all of the responses have been read into the `responses` table, there are a lot of different types of responses lumped into the one file. One thing that might helps is to make some semantic splits into the survey items, in-text items, and practice quizzes. Since the survey items are (generally) static trait questions like demographics, those can go into a wide `students` table, and the others into a long `textbook_items` table and a long `practice_quizzes` table.
+
+```{r}
+students <- responses %>%
+  filter(item_id %in% c("Student_Survey", "Post-Survey")) %>%
+  drop_na(prompt, response) %>%
+  mutate(prompt = ifelse(
+    item_id == "Student_Survey",
+    paste("pre:", prompt),
+    paste("post:", prompt)
+  )) %>%
+  select(
+    -starts_with("lrn_"), -correct, -attempt, -dt_submitted,
+    -chapter, -page, -item_id, -item_type, -user_agent
+  ) %>%
+  spread(prompt, response)
+
+textbook_items <- responses %>%
+  filter(
+    !item_id %in% c("Student_Survey", "Post-Survey"),
+    !str_detect(page, "Practice Quiz")
+  ) %>%
+  drop_na(prompt, response)
+
+practice_quizzes <- responses %>%
+  filter(str_detect(page, "Practice Quiz"))
+```
+
+## Saving Data Images
+
+It takes a while to process all of the class data and get it into the tables you feel comfortable working with. Instead of having to run this file or these code chunks every time we want to work with the processed data, we can save the processed data to a *.Rds* file. Further, `readr::write_rds()` makes it easy to compress the files so that they don't take up as much disk space.
+
+```{r}
+write_rds(items, "items.Rds", compress = "gz")
+write_rds(page_views, "page_views.Rds", compress = "gz")
+write_rds(tags, "tags.Rds", compress = "gz")
+write_rds(responses, "responses.Rds", compress = "gz")
+write_rds(students, "students.Rds", compress = "gz")
+write_rds(textbook_items, "textbook_items.Rds", compress = "gz")
+write_rds(practice_quizzes, "practice_quizzes.Rds", compress = "gz")
+```
+
+Reading the files in again is as simple as using the complement function `readr::read_rds()`. This code block will read in a second copy of the `items` table and then compare to the one we already have loaded.
+
+```{r}
+items2 <- read_rds("items.Rds")
+identical(items, items2)
+```
+

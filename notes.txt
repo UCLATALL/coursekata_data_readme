@@ -1,11 +1,15 @@
 TODO:
 
 Check grammar with gramr when done
-Check variable names match new variable names
+
+Check variable names match new variable names:
  - points_possible
  - points_earned
  - etc.
 
+Check variable names for consistency:
+ - lrn_activity_id vs. lrn_activity_reference
+ - what is lrn_activity_template_id
 
 Changes to download structure:
 - Remove README
