@@ -71,11 +71,6 @@ Column | Description
 **dt_submitted** | a datetime object indicating when the response was submitted (timezone: GMT/UTC)
 **attempt** | the number of times the question has been attempted, including the current attempt
 **user_agent** | the browser user agent string for the user (see for details: )
-**dcl_pre_exercise_code** | the code run invisibly to set up the module
-**dcl_sample_code** | the code in the module when it first loads
-**dcl_solution** | the code that appears in the solution tab
-**dcl_sct** | the solution checking code (see the testwhat package for details)
-**dcl_hint** | the text that appears in the hint box
 **lrn_session_id** | the unique ID for this user session on Learnosity
 **lrn_response_id** | the unique ID for this particular response on Learnosity
 **lrn_items_api_version** | the version of the Learnosity Items API for this item
@@ -100,11 +95,10 @@ Column | Description
 # instead just read everything in as a character column and then convert after
 responses <- "responses.csv" %>%
   read_csv(col_types = cols(.default = col_character())) %>%
-  mutate_at(vars(correct), parse_logical) %>%
   mutate_at(vars(attempt, lrn_question_position), parse_integer) %>%
+  mutate_at(vars(points_possible, points_earned), parse_number) %>%
   # read in dates as UTC timezone and then convert to system timezone
   mutate_at(vars(matches("^(?:lrn_)?dt_")), convert_date_string) %>%
-  mutate_at(vars(lrn_score, lrn_max_score), parse_number) %>%
   # convert response JSON to a nested list-column then move it to the end
   mutate(lrn_response_json = map(lrn_response_json, json_to_list)) %>%
   select(-lrn_response_json, lrn_response_json) %>%
@@ -227,34 +221,41 @@ responses <- responses %>%
     lookup_response, lookup_table = lookup_table
   ))
 
+str_detect(responses[19, "response"]$response, '\\[(?:"\\d+")[, ]*\\]')
+
 # clean-up
-rm(lookup_table, lookup_response)
+# rm(lookup_table, lookup_response)
 ```
 
 ### Split the Response Data
 
-Though all of the responses have been read into the `responses` table, there are a lot of different types of responses lumped into the one file. One thing that might helps is to make some semantic splits into the survey items, in-text items, and practice quizzes. Since the survey items are (generally) static trait questions like demographics, those can go into a wide `students` table, and the others into a long `textbook_items` table and a long `practice_quizzes` table.
+Though all of the responses have been read into the `responses` table, there are a lot of different types of responses lumped into the one file. One thing that might helps is to make some semantic splits into the pre- and post-survey items, in-text items, and practice quizzes. Since the pre-/post-survey items are (generally) static trait questions like demographics, those can go into a wide `students` table, and the others into a long `textbook_items` table and a long `practice_quizzes` table.
 
 ```{r}
 students <- responses %>%
-  filter(item_id %in% c("Student_Survey", "Post-Survey")) %>%
-  drop_na(prompt, response) %>%
+  filter(str_detect(item_id, "Student_Survey_Pre|Post-Survey")) %>%
+  drop_na(student_id, prompt, response) %>% 
   mutate(prompt = ifelse(
-    item_id == "Student_Survey",
+    str_detect(item_id, "Student_Survey"),
     paste("pre:", prompt),
     paste("post:", prompt)
   )) %>%
+  # only keep most recent response
+  arrange(desc(dt_submitted)) %>%
+  distinct(student_id, prompt, .keep_all = TRUE) %>%
+  # spread each prompt to its own column
   select(
-    -starts_with("lrn_"), -correct, -attempt, -dt_submitted,
+    -starts_with("lrn_"), -attempt, -release, -dt_submitted, 
+    -points_possible, -points_earned,
     -chapter, -page, -item_id, -item_type, -user_agent
-  ) %>%
-  spread(prompt, response)
+  ) %>% 
+  spread(prompt, response) %>% 
+  # rearrange the columns
+  select(class_id, course_name, branch, student_id, 
+         starts_with("pre: "), starts_with("post: "))
 
 textbook_items <- responses %>%
-  filter(
-    !item_id %in% c("Student_Survey", "Post-Survey"),
-    !str_detect(page, "Practice Quiz")
-  ) %>%
+  filter(!str_detect(item_id, "Student_Survey|Post-Survey|Practice Quiz")) %>%
   drop_na(prompt, response)
 
 practice_quizzes <- responses %>%
