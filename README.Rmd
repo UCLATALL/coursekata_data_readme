@@ -4,14 +4,21 @@ output: pdf_document
 ---
 
 If you are reading this as a PDF, this PDF was created from the RMarkdown
-notebook README.Rmd. If you open that file in RStudio you will be able to run
-and interact with the code blocks below. Otherwise, happy reading!
+notebook `README.Rmd`. If you open that file in RStudio you will be able to run
+and interact with the code blocks below. 
+
+All of the code blocks are also included in the `process_data.R` file that was
+included in the data download zip folder. If you already know how the data is 
+formatted and what the purpose of this code is for, then you can probably just
+use that processing script.
+
+Happy reading!
 
 ## Required Packages and Helper Functions
 
 To use the code in these examples you will need a handful of useful packages.
 The following code loads those packages and some helper functions, and below the
-code you can find a description of why each package is being loaded.
+code you can find a description of why each package is needed.
 
 --------------------------------------------------------------------------------
       Package Description
@@ -65,7 +72,7 @@ convert_date_string <- function(x) {
 
 ## Loading Class Data
 
-Data from the class is split into four tables with each table in its own file.
+Data from the class comes in four tables with each table in its own file.
 Below is the code to load each table, and a description of the contents of each
 table.
 
@@ -158,7 +165,7 @@ responses table:
        **lrn_response_json** the fully-detailed JSON response object
 --------------------------------------------------------------------------------
  
-*For more about the distinction between Learnosity Activities, Items, and Questions, see the documenation at https://authorguide.learnosity.com/hc/en-us.*
+*For more about the distinction between Learnosity Activities, Items, and Questions, see the documentation at https://authorguide.learnosity.com/hc/en-us.*
  
 #### Code to Load
 
@@ -260,7 +267,7 @@ columns in the table:
      **lrn_question_data** the fully-detailed JSON object that sets up the item
 --------------------------------------------------------------------------------
  
-*For more about the distinction between Learnosity Activities, Items, and Questions, see the documenation at https://authorguide.learnosity.com/hc/en-us.*
+*For more about the distinction between Learnosity Activities, Items, and Questions, see the documentation at https://authorguide.learnosity.com/hc/en-us.*
 
 #### Code to Load
 
