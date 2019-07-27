@@ -1,11 +1,19 @@
 ---
 title: "CourseKata Class Data"
-output: pdf_document
+output: 
+  pdf_document: default
+  md_document: 
+    variant: markdown_github
 ---
 
-If you are reading this as a PDF, this PDF was created from the RMarkdown
-notebook `README.Rmd`. If you open that file in RStudio you will be able to run
-and interact with the code blocks below. 
+# CourseKata Data Download README
+
+This file is included in the post-class data download of class data for a 
+CourseKata class.
+
+If you are reading this as a PDF or on GitHub, this file was created from the
+RMarkdown notebook `README.Rmd`. If you open that file in RStudio you will be
+able to run and interact with the code blocks below. 
 
 All of the code blocks are also included in the `process_data.R` file that was
 included in the data download zip folder. If you already know how the data is 
